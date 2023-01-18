@@ -1,0 +1,8 @@
+{
+  "databasePath": "flashpoint.sqlite",
+  "imagePath": "C:\\Flashpoint\\Data\\Images",
+  "errorImageFile": "404.png",
+  "filter": [
+    "LEGACY-Extreme"
+  ]
+}
