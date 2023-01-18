@@ -1,3 +1,5 @@
 /config.json
 flashpoint-api.exe
 flashpoint.sqlite
+flashpoint.sqlite-shm
+flashpoint.sqlite-wal

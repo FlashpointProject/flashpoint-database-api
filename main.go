@@ -24,6 +24,7 @@ type Config struct {
 	DatabasePath   string   `json:"databasePath"`
 	ImagePath      string   `json:"imagePath"`
 	ErrorImageFile string   `json:"errorImageFile"`
+	SearchLimit    int      `json:"searchLimit"`
 	Filter         []string `json:"filter"`
 }
 
@@ -59,6 +60,16 @@ type AddApp struct {
 	RunBefore       bool   `json:"runBefore"`
 }
 
+type Stats struct {
+	LibraryTotals  []ColumnStats `json:"libraryTotals"`
+	FormatTotals   []ColumnStats `json:"formatTotals"`
+	PlatformTotals []ColumnStats `json:"platformTotals"`
+}
+type ColumnStats struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
 var config Config
 
 var db *sql.DB
@@ -84,6 +95,8 @@ func main() {
 
 	http.HandleFunc("/search", searchHandler)
 	http.HandleFunc("/addapp", addAppHandler)
+	http.HandleFunc("/platforms", platformHandler)
+	http.HandleFunc("/stats", statsHandler)
 	http.HandleFunc("/logo", imageHandler)
 	http.HandleFunc("/screenshot", imageHandler)
 
@@ -109,21 +122,38 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 
 	whereLike := make([]string, 0)
 	whereVal := make([]string, 0)
-	for i, v := range data {
-		if urlQuery.Has(v) && len(urlQuery.Get(v)) >= 3 {
+	i := 1
+
+	for _, v := range data {
+		if v != "tagsStr" && urlQuery.Has(v) && len(urlQuery.Get(v)) >= 3 {
 			whereLike = append(whereLike, fmt.Sprintf("%s LIKE $%d", v, i))
 			whereVal = append(whereVal, "%"+urlQuery.Get(v)+"%")
+			i++
+		}
+	}
+
+	tags := make([]string, 0)
+	if urlQuery.Has("tags") && len(urlQuery.Get("tags")) >= 3 {
+		tags = strings.Split(urlQuery.Get("tags"), ",")
+		for _, v := range tags {
+			whereLike = append(whereLike, fmt.Sprintf("tagsStr LIKE $%d", i))
+			whereVal = append(whereVal, "%"+v+"%")
+			i++
 		}
 	}
 
 	if len(whereVal) > 0 {
 		dbQuery := fmt.Sprintf("SELECT %s FROM game WHERE %s", strings.Join(data, ", "), strings.Join(whereLike, " AND "))
 
+		limit := config.SearchLimit
 		if urlQuery.Has("limit") {
 			i, err := strconv.Atoi(urlQuery.Get("limit"))
-			if err == nil && i > 0 {
-				dbQuery += fmt.Sprintf(" LIMIT %d", i)
+			if err == nil && i > 0 && i < limit {
+				limit = i
 			}
+		}
+		if limit > 0 && config.SearchLimit > 0 {
+			dbQuery += fmt.Sprintf(" LIMIT %d", limit)
 		}
 
 		args := make([]interface{}, len(whereVal))
@@ -160,20 +190,27 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			if len(tags) > 0 {
+				entryTagsLower := make([]string, len(entry.Tags))
+				for i := range entry.Tags {
+					entryTagsLower = append(entryTagsLower, strings.ToLower(entry.Tags[i]))
+				}
+
+				for _, v := range tags {
+					if !slices.Contains(entryTagsLower, strings.ToLower(v)) {
+						filtered = true
+						break
+					}
+				}
+			}
+
 			if !filtered {
 				entries = append(entries, entry)
 			}
 		}
 	}
 
-	results, err := json.Marshal(entries)
-	if err != nil {
-		log.Print(err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	w.Write(results)
+	marshalAndWrite(entries, w)
 }
 
 func addAppHandler(w http.ResponseWriter, r *http.Request) {
@@ -206,14 +243,87 @@ func addAppHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	results, err := json.Marshal(addApps)
+	marshalAndWrite(addApps, w)
+}
+
+func platformHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	w.Header().Set("Content-Type", "application/json")
+	log.Printf("serving %s to %s\n", r.URL.RequestURI(), strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+
+	platforms := make([]string, 0)
+
+	rows, err := db.Query("SELECT platform FROM game GROUP BY platform")
 	if err != nil {
 		log.Print(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	w.Write(results)
+	for rows.Next() {
+		var platform string
+
+		err := rows.Scan(&platform)
+		if err != sql.ErrNoRows && err != nil {
+			log.Print(err)
+			break
+		}
+
+		platforms = append(platforms, platform)
+	}
+
+	marshalAndWrite(platforms, w)
+}
+
+func statsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	w.Header().Set("Content-Type", "application/json")
+	log.Printf("serving %s to %s\n", r.URL.RequestURI(), strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+
+	var stats Stats
+
+	stats.LibraryTotals = make([]ColumnStats, 0)
+	stats.FormatTotals = make([]ColumnStats, 0)
+	stats.PlatformTotals = make([]ColumnStats, 0)
+
+	if err := addStat("library", &stats.LibraryTotals); err != http.StatusFound {
+		w.WriteHeader(err)
+		return
+	}
+	if err := addStat("platform", &stats.PlatformTotals); err != http.StatusFound {
+		w.WriteHeader(err)
+		return
+	}
+
+	formatRows, err := db.Query("SELECT activeDataOnDisk, COUNT(*) FROM game GROUP BY activeDataOnDisk")
+	if err != nil {
+		log.Print(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	for formatRows.Next() {
+		var formatStats ColumnStats
+		var activeDataOnDisk bool
+
+		err := formatRows.Scan(&activeDataOnDisk, &formatStats.Count)
+		if err != sql.ErrNoRows && err != nil {
+			log.Print(err)
+			break
+		}
+
+		if activeDataOnDisk {
+			formatStats.Name = "gameZip"
+		} else {
+			formatStats.Name = "legacy"
+		}
+
+		stats.FormatTotals = append(stats.FormatTotals, formatStats)
+	}
+
+	marshalAndWrite(stats, w)
 }
 
 func imageHandler(w http.ResponseWriter, r *http.Request) {
@@ -300,4 +410,37 @@ func imageHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		png.Encode(w, imageData)
 	}
+}
+
+func marshalAndWrite(object any, w http.ResponseWriter) {
+	data, err := json.Marshal(object)
+	if err != nil {
+		log.Print(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(data)
+}
+
+func addStat(column string, destination *[]ColumnStats) int {
+	rows, err := db.Query(fmt.Sprintf("SELECT %[1]s, COUNT(*) FROM game GROUP BY %[1]s", column))
+	if err != nil {
+		log.Print(err)
+		return http.StatusInternalServerError
+	}
+
+	for rows.Next() {
+		var stats ColumnStats
+
+		err := rows.Scan(&stats.Name, &stats.Count)
+		if err != sql.ErrNoRows && err != nil {
+			log.Print(err)
+			break
+		}
+
+		*destination = append(*destination, stats)
+	}
+
+	return http.StatusFound
 }

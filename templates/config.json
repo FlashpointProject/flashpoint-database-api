@@ -2,6 +2,7 @@
   "databasePath": "flashpoint.sqlite",
   "imagePath": "C:\\Flashpoint\\Data\\Images",
   "errorImageFile": "404.png",
+  "searchLimit": 1000,
   "filter": [
     "LEGACY-Extreme"
   ]
