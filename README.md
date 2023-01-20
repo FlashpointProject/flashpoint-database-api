@@ -1,10 +1,13 @@
 # Flashpoint API
 This is a web API for Flashpoint written in Go.
 
-## Features
-* Database search and statistics
-* Endpoint for additional app info
-* Image server with scaling/encoding capabilities
+## Endpoints
+* `search` for searching the database
+* `addapp` for additional app metadata
+* `files` for GameZIP file listings
+* `logo` and `screenshot` for optionally-encoded entry images
+* `stats` for various entry count statistics
+* `platforms` for a list of all platforms in the database
 
 ## To-do
 * Document the API

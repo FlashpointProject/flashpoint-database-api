@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -23,6 +24,7 @@ import (
 
 type Config struct {
 	DatabasePath   string   `json:"databasePath"`
+	GameZipPath    string   `json:"gameZipPath"`
 	ImagePath      string   `json:"imagePath"`
 	ErrorImageFile string   `json:"errorImageFile"`
 	LogFile        string   `json:"logFile"`
@@ -131,7 +133,8 @@ func main() {
 
 	http.HandleFunc("/search", searchHandler)
 	http.HandleFunc("/addapp", addAppHandler)
-	http.HandleFunc("/platforms", platformHandler)
+	http.HandleFunc("/platforms", platformsHandler)
+	http.HandleFunc("/files", filesHandler)
 	http.HandleFunc("/stats", statsHandler)
 	http.HandleFunc("/logo", imageHandler)
 	http.HandleFunc("/screenshot", imageHandler)
@@ -278,7 +281,7 @@ func addAppHandler(w http.ResponseWriter, r *http.Request) {
 	marshalAndWrite(addApps, w)
 }
 
-func platformHandler(w http.ResponseWriter, r *http.Request) {
+func platformsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	setSharedHeadersAndLog(w, r)
 
@@ -304,6 +307,38 @@ func platformHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	marshalAndWrite(platforms, w)
+}
+
+func filesHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	setSharedHeadersAndLog(w, r)
+
+	files := make([]string, 0)
+	urlQuery := r.URL.Query()
+
+	if urlQuery.Has("id") {
+		var gameZip string
+
+		row := db.QueryRow("SELECT path FROM game_data WHERE gameId = ?", urlQuery.Get("id"))
+		if err := row.Scan(&gameZip); err == nil {
+			zip, err := zip.OpenReader(filepath.Join(config.GameZipPath, gameZip))
+			if err == nil {
+				defer zip.Close()
+
+				for _, file := range zip.File {
+					if strings.HasPrefix(file.Name, "content/") {
+						files = append(files, strings.TrimPrefix(file.Name, "content/"))
+					}
+				}
+			} else {
+				errorLog.Println(err)
+			}
+		} else if err != sql.ErrNoRows {
+			errorLog.Println(err)
+		}
+	}
+
+	marshalAndWrite(files, w)
 }
 
 func statsHandler(w http.ResponseWriter, r *http.Request) {
