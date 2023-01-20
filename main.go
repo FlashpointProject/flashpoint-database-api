@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/jpeg"
 	"image/png"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -24,6 +25,8 @@ type Config struct {
 	DatabasePath   string   `json:"databasePath"`
 	ImagePath      string   `json:"imagePath"`
 	ErrorImageFile string   `json:"errorImageFile"`
+	LogFile        string   `json:"logFile"`
+	LogActivity    bool     `json:"logActivity"`
 	SearchLimit    int      `json:"searchLimit"`
 	Filter         []string `json:"filter"`
 }
@@ -70,10 +73,12 @@ type ColumnStats struct {
 	Count int    `json:"count"`
 }
 
-var config Config
-
-var db *sql.DB
-var dbErr error
+var (
+	serverLog *log.Logger
+	errorLog  *log.Logger
+	config    Config
+	db        *sql.DB
+)
 
 func main() {
 	configRaw, err := os.ReadFile("config.json")
@@ -82,9 +87,10 @@ func main() {
 	} else if err := json.Unmarshal([]byte(configRaw), &config); err != nil {
 		log.Fatal("cannot parse config.json")
 	} else {
-		log.Print("loaded config.json")
+		log.Println("loaded config.json")
 	}
 
+	var dbErr error
 	db, dbErr = sql.Open("sqlite3", config.DatabasePath)
 	if dbErr != nil {
 		log.Fatal(dbErr)
@@ -92,6 +98,36 @@ func main() {
 
 	defer db.Close()
 	log.Println("connected to Flashpoint database")
+
+	var errorOutput io.Writer
+	var serverOutput io.Writer
+	if config.LogFile != "" {
+		if tempOutput, err := os.OpenFile(config.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666); err == nil {
+			errorOutput = tempOutput
+			log.Println("logging to " + config.LogFile)
+		} else {
+			errorOutput = os.Stdout
+			log.Println("cannot open " + config.LogFile + "; logging to standard output instead")
+		}
+
+		if config.LogActivity {
+			serverOutput = errorOutput
+		} else {
+			serverOutput = io.Discard
+		}
+	} else {
+		errorOutput = os.Stdout
+		log.Println("logging to standard output")
+
+		if config.LogActivity {
+			serverOutput = os.Stdout
+		} else {
+			serverOutput = io.Discard
+		}
+	}
+
+	errorLog = log.New(errorOutput, "error: ", log.Ldate|log.Ltime|log.Lshortfile)
+	serverLog = log.New(serverOutput, "server: ", log.Ldate|log.Ltime)
 
 	http.HandleFunc("/search", searchHandler)
 	http.HandleFunc("/addapp", addAppHandler)
@@ -106,15 +142,15 @@ func main() {
 		ReadTimeout:  15 * time.Second,
 	}
 
-	log.Printf("server started at %v\n", server.Addr)
-	log.Fatal(server.ListenAndServe())
+	serverLog.Printf("server started at %v\n", server.Addr)
+	errorLog.Fatal(server.ListenAndServe())
 }
 
 func searchHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	w.Header().Set("Content-Type", "application/json")
-	log.Printf("serving %s to %s\n", r.URL.RequestURI(), strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+	serverLog.Printf("serving %s to %s\n", r.URL.RequestURI(), strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
 
 	entries := make([]Entry, 0)
 	data := []string{"id", "title", "alternateTitles", "series", "developer", "publisher", "dateAdded", "dateModified", "platform", "playMode", "status", "notes", "source", "applicationPath", "launchCommand", "releaseDate", "version", "originalDescription", "language", "library", "activeDataOnDisk", "tagsStr"}
@@ -163,7 +199,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 
 		rows, err := db.Query(dbQuery, args...)
 		if err != nil {
-			log.Print(err)
+			errorLog.Println(err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -174,7 +210,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 
 			err := rows.Scan(&entry.ID, &entry.Title, &entry.AlternateTitles, &entry.Series, &entry.Developer, &entry.Publisher, &entry.DateAdded, &entry.DateModified, &entry.Platform, &entry.PlayMode, &entry.Status, &entry.Notes, &entry.Source, &entry.ApplicationPath, &entry.LaunchCommand, &entry.ReleaseDate, &entry.Version, &entry.OriginalDescription, &entry.Language, &entry.Library, &entry.Zipped, &tagsStr)
 			if err != sql.ErrNoRows && err != nil {
-				log.Print(err)
+				errorLog.Println(err)
 				break
 			}
 
@@ -217,7 +253,7 @@ func addAppHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	w.Header().Set("Content-Type", "application/json")
-	log.Printf("serving %s to %s\n", r.URL.RequestURI(), strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+	serverLog.Printf("serving %s to %s\n", r.URL.RequestURI(), strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
 
 	addApps := make([]AddApp, 0)
 	urlQuery := r.URL.Query()
@@ -225,7 +261,7 @@ func addAppHandler(w http.ResponseWriter, r *http.Request) {
 	if urlQuery.Has("id") {
 		rows, err := db.Query("SELECT id, applicationPath, autoRunBefore, launchCommand, name FROM additional_app WHERE parentGameId = ?", urlQuery.Get("id"))
 		if err != nil {
-			log.Print(err)
+			errorLog.Println(err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -235,7 +271,7 @@ func addAppHandler(w http.ResponseWriter, r *http.Request) {
 
 			err := rows.Scan(&addApp.ID, &addApp.ApplicationPath, &addApp.RunBefore, &addApp.LaunchCommand, &addApp.Name)
 			if err != sql.ErrNoRows && err != nil {
-				log.Print(err)
+				errorLog.Println(err)
 				break
 			}
 
@@ -250,13 +286,13 @@ func platformHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	w.Header().Set("Content-Type", "application/json")
-	log.Printf("serving %s to %s\n", r.URL.RequestURI(), strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+	serverLog.Printf("serving %s to %s\n", r.URL.RequestURI(), strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
 
 	platforms := make([]string, 0)
 
 	rows, err := db.Query("SELECT platform FROM game GROUP BY platform")
 	if err != nil {
-		log.Print(err)
+		errorLog.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -266,7 +302,7 @@ func platformHandler(w http.ResponseWriter, r *http.Request) {
 
 		err := rows.Scan(&platform)
 		if err != sql.ErrNoRows && err != nil {
-			log.Print(err)
+			errorLog.Println(err)
 			break
 		}
 
@@ -280,7 +316,7 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	w.Header().Set("Content-Type", "application/json")
-	log.Printf("serving %s to %s\n", r.URL.RequestURI(), strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+	serverLog.Printf("serving %s to %s\n", r.URL.RequestURI(), strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
 
 	var stats Stats
 
@@ -299,7 +335,7 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
 
 	formatRows, err := db.Query("SELECT activeDataOnDisk, COUNT(*) FROM game GROUP BY activeDataOnDisk")
 	if err != nil {
-		log.Print(err)
+		errorLog.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -310,7 +346,7 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
 
 		err := formatRows.Scan(&activeDataOnDisk, &formatStats.Count)
 		if err != sql.ErrNoRows && err != nil {
-			log.Print(err)
+			errorLog.Println(err)
 			break
 		}
 
@@ -329,7 +365,7 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
 func imageHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-	log.Printf("serving %s to %s\n", r.URL.RequestURI(), strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+	serverLog.Printf("serving %s to %s\n", r.URL.RequestURI(), strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
 
 	urlQuery := r.URL.Query()
 
@@ -415,7 +451,7 @@ func imageHandler(w http.ResponseWriter, r *http.Request) {
 func marshalAndWrite(object any, w http.ResponseWriter) {
 	data, err := json.Marshal(object)
 	if err != nil {
-		log.Print(err)
+		errorLog.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -426,7 +462,7 @@ func marshalAndWrite(object any, w http.ResponseWriter) {
 func addStat(column string, destination *[]ColumnStats) int {
 	rows, err := db.Query(fmt.Sprintf("SELECT %[1]s, COUNT(*) FROM game GROUP BY %[1]s", column))
 	if err != nil {
-		log.Print(err)
+		errorLog.Println(err)
 		return http.StatusInternalServerError
 	}
 
@@ -435,7 +471,7 @@ func addStat(column string, destination *[]ColumnStats) int {
 
 		err := rows.Scan(&stats.Name, &stats.Count)
 		if err != sql.ErrNoRows && err != nil {
-			log.Print(err)
+			errorLog.Println(err)
 			break
 		}
 
