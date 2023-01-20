@@ -147,10 +147,8 @@ func main() {
 }
 
 func searchHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	w.Header().Set("Content-Type", "application/json")
-	serverLog.Printf("serving %s to %s\n", r.URL.RequestURI(), strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+	setSharedHeadersAndLog(w, r)
 
 	entries := make([]Entry, 0)
 	data := []string{"id", "title", "alternateTitles", "series", "developer", "publisher", "dateAdded", "dateModified", "platform", "playMode", "status", "notes", "source", "applicationPath", "launchCommand", "releaseDate", "version", "originalDescription", "language", "library", "activeDataOnDisk", "tagsStr"}
@@ -250,10 +248,8 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func addAppHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	w.Header().Set("Content-Type", "application/json")
-	serverLog.Printf("serving %s to %s\n", r.URL.RequestURI(), strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+	setSharedHeadersAndLog(w, r)
 
 	addApps := make([]AddApp, 0)
 	urlQuery := r.URL.Query()
@@ -283,10 +279,8 @@ func addAppHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func platformHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	w.Header().Set("Content-Type", "application/json")
-	serverLog.Printf("serving %s to %s\n", r.URL.RequestURI(), strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+	setSharedHeadersAndLog(w, r)
 
 	platforms := make([]string, 0)
 
@@ -313,10 +307,8 @@ func platformHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func statsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	w.Header().Set("Content-Type", "application/json")
-	serverLog.Printf("serving %s to %s\n", r.URL.RequestURI(), strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+	setSharedHeadersAndLog(w, r)
 
 	var stats Stats
 
@@ -363,9 +355,7 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func imageHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-	serverLog.Printf("serving %s to %s\n", r.URL.RequestURI(), strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+	setSharedHeadersAndLog(w, r)
 
 	urlQuery := r.URL.Query()
 
@@ -446,6 +436,12 @@ func imageHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		png.Encode(w, imageData)
 	}
+}
+
+func setSharedHeadersAndLog(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	serverLog.Printf("serving %s to %s\n", r.URL.RequestURI(), r.Header.Get("X-Forwarded-For"))
 }
 
 func marshalAndWrite(object any, w http.ResponseWriter) {
