@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
+	_ "image/gif"
 	"image/jpeg"
 	"image/png"
 	"io"
@@ -423,7 +424,7 @@ func imageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer imageRaw.Close()
 
-	imageData, err := png.Decode(imageRaw)
+	imageData, _, err := image.Decode(imageRaw)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
