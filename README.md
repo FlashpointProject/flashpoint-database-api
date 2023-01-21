@@ -3,7 +3,7 @@ This is a web API for Flashpoint written in Go.
 
 ## Endpoints
 * `search` for searching the database
-* `addapp` for additional app metadata
+* `addapps` for additional app metadata
 * `files` for GameZIP file listings
 * `logo` and `screenshot` for optionally-encoded entry images
 * `stats` for various entry count statistics

@@ -132,7 +132,7 @@ func main() {
 	serverLog = log.New(serverOutput, "server: ", log.Ldate|log.Ltime)
 
 	http.HandleFunc("/search", searchHandler)
-	http.HandleFunc("/addapp", addAppHandler)
+	http.HandleFunc("/addapps", addAppsHandler)
 	http.HandleFunc("/platforms", platformsHandler)
 	http.HandleFunc("/files", filesHandler)
 	http.HandleFunc("/stats", statsHandler)
@@ -250,7 +250,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 	marshalAndWrite(entries, w)
 }
 
-func addAppHandler(w http.ResponseWriter, r *http.Request) {
+func addAppsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	setSharedHeadersAndLog(w, r)
 
