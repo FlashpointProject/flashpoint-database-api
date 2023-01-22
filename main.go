@@ -163,7 +163,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 	i := 1
 
 	for _, v := range data {
-		if v != "tagsStr" && urlQuery.Has(v) && len(urlQuery.Get(v)) >= 3 {
+		if v != "tagsStr" && len(urlQuery.Get(v)) > 0 {
 			whereLike = append(whereLike, fmt.Sprintf("%s LIKE $%d", v, i))
 			whereVal = append(whereVal, "%"+urlQuery.Get(v)+"%")
 			i++
@@ -171,7 +171,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tags := make([]string, 0)
-	if urlQuery.Has("tags") && len(urlQuery.Get("tags")) >= 3 {
+	if len(urlQuery.Get("tags")) > 0 {
 		tags = strings.Split(urlQuery.Get("tags"), ",")
 		for _, v := range tags {
 			whereLike = append(whereLike, fmt.Sprintf("tagsStr LIKE $%d", i))
