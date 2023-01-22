@@ -181,7 +181,12 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(whereVal) > 0 {
-		dbQuery := fmt.Sprintf("SELECT %s FROM game WHERE %s", strings.Join(data, ", "), strings.Join(whereLike, " AND "))
+		operator := " AND "
+		if strings.ToLower(urlQuery.Get("or")) == "true" {
+			operator = " OR "
+		}
+
+		dbQuery := fmt.Sprintf("SELECT %s FROM game WHERE %s", strings.Join(data, ", "), strings.Join(whereLike, operator))
 
 		limit := config.SearchLimit
 		if urlQuery.Has("limit") {
@@ -219,7 +224,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 			entry.Tags = strings.Split(tagsStr, "; ")
 
 			filtered := false
-			if urlQuery.Has("filter") && strings.ToLower(urlQuery.Get("filter")) == "true" {
+			if strings.ToLower(urlQuery.Get("filter")) == "true" {
 				for _, v := range entry.Tags {
 					if slices.Contains(config.Filter, v) {
 						filtered = true
