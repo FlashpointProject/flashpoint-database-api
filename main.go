@@ -174,7 +174,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 
 	if len(whereVal) > 0 {
 		operator := " AND "
-		if strings.ToLower(urlQuery.Get("or")) == "true" {
+		if strings.ToLower(urlQuery.Get("any")) == "true" {
 			operator = " OR "
 		}
 
