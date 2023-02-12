@@ -162,21 +162,13 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 	whereVal := make([]string, 0)
 	i := 1
 
-	for _, v := range data {
-		if v != "tagsStr" && len(urlQuery.Get(v)) > 0 {
-			whereLike = append(whereLike, fmt.Sprintf("%s LIKE $%d", v, i))
-			whereVal = append(whereVal, "%"+urlQuery.Get(v)+"%")
-			i++
-		}
-	}
-
-	tags := make([]string, 0)
-	if len(urlQuery.Get("tags")) > 0 {
-		tags = strings.Split(urlQuery.Get("tags"), ",")
-		for _, v := range tags {
-			whereLike = append(whereLike, fmt.Sprintf("tagsStr LIKE $%d", i))
-			whereVal = append(whereVal, "%"+v+"%")
-			i++
+	for _, c := range data {
+		if len(urlQuery.Get(c)) > 0 {
+			for _, v := range strings.Split(urlQuery.Get(c), ",") {
+				whereLike = append(whereLike, fmt.Sprintf("%s LIKE $%d", c, i))
+				whereVal = append(whereVal, "%"+v+"%")
+				i++
+			}
 		}
 	}
 
@@ -233,6 +225,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			tags := strings.Split(urlQuery.Get("tagsStr"), ",")
 			if len(tags) > 0 {
 				entryTagsLower := make([]string, len(entry.Tags))
 				for i := range entry.Tags {
@@ -240,8 +233,11 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 				}
 
 				for _, v := range tags {
-					if !slices.Contains(entryTagsLower, strings.ToLower(v)) {
+					containsTag := slices.Contains(entryTagsLower, strings.ToLower(v))
+					if operator == " AND " && !containsTag {
 						filtered = true
+						break
+					} else if operator == " OR " && containsTag {
 						break
 					}
 				}
