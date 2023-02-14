@@ -155,15 +155,28 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 	setSharedHeadersAndLog(w, r)
 
 	entries := make([]Entry, 0)
-	data := []string{"id", "title", "alternateTitles", "series", "developer", "publisher", "dateAdded", "dateModified", "platform", "playMode", "status", "notes", "source", "applicationPath", "launchCommand", "releaseDate", "version", "originalDescription", "language", "library", "activeDataOnDisk", "tagsStr"}
+	columns := []string{"id", "title", "alternateTitles", "series", "developer", "publisher", "dateAdded", "dateModified", "platform", "playMode", "status", "notes", "source", "applicationPath", "launchCommand", "releaseDate", "version", "originalDescription", "language", "library", "activeDataOnDisk", "tagsStr"}
 	urlQuery := r.URL.Query()
 
 	whereLike := make([]string, 0)
 	whereVal := make([]string, 0)
 	i := 1
 
-	for _, c := range data {
-		if len(urlQuery.Get(c)) > 0 {
+	if len(urlQuery.Get("smartSearch")) > 0 {
+		for _, v := range strings.Split(urlQuery.Get("smartSearch"), ",") {
+			smartCols := []string{"title", "alternateTitles", "series", "developer", "publisher"}
+			smartLike := make([]string, 0)
+			for _, c := range smartCols {
+				smartLike = append(smartLike, fmt.Sprintf("%s LIKE $%d", c, i))
+				whereVal = append(whereVal, "%"+v+"%")
+				i++
+			}
+			whereLike = append(whereLike, "("+strings.Join(smartLike, " OR ")+")")
+		}
+	}
+
+	for _, c := range columns {
+		if c != "smartSearch" && len(urlQuery.Get(c)) > 0 {
 			for _, v := range strings.Split(urlQuery.Get(c), ",") {
 				whereLike = append(whereLike, fmt.Sprintf("%s LIKE $%d", c, i))
 				whereVal = append(whereVal, "%"+v+"%")
@@ -178,7 +191,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 			operator = " OR "
 		}
 
-		dbQuery := fmt.Sprintf("SELECT %s FROM game WHERE %s", strings.Join(data, ", "), strings.Join(whereLike, operator))
+		dbQuery := fmt.Sprintf("SELECT %s FROM game WHERE %s", strings.Join(columns, ", "), strings.Join(whereLike, operator))
 
 		limit := config.SearchLimit
 		if urlQuery.Has("limit") {
