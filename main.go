@@ -157,6 +157,11 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 	entries := make([]Entry, 0)
 	columns := []string{"id", "title", "alternateTitles", "series", "developer", "publisher", "dateAdded", "dateModified", "platform", "playMode", "status", "notes", "source", "applicationPath", "launchCommand", "releaseDate", "version", "originalDescription", "language", "library", "activeDataOnDisk", "tagsStr"}
 	urlQuery := r.URL.Query()
+	replacer := strings.NewReplacer("^", "^^", "%", "^%", "_", "^_")
+	operator := " AND "
+	if strings.ToLower(urlQuery.Get("any")) == "true" {
+		operator = " OR "
+	}
 
 	whereLike := make([]string, 0)
 	whereVal := make([]string, 0)
@@ -167,30 +172,29 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 			smartCols := []string{"title", "alternateTitles", "series", "developer", "publisher"}
 			smartLike := make([]string, 0)
 			for _, c := range smartCols {
-				smartLike = append(smartLike, fmt.Sprintf("%s LIKE $%d", c, i))
-				whereVal = append(whereVal, "%"+v+"%")
-				i++
+				smartLike = append(smartLike, fmt.Sprintf("%s LIKE $%d ESCAPE '^'", c, i))
 			}
+			whereVal = append(whereVal, "%"+replacer.Replace(v)+"%")
 			whereLike = append(whereLike, "("+strings.Join(smartLike, " OR ")+")")
+			i++
 		}
 	}
 
 	for _, c := range columns {
+		metaLike := make([]string, 0)
 		if c != "smartSearch" && len(urlQuery.Get(c)) > 0 {
 			for _, v := range strings.Split(urlQuery.Get(c), ",") {
-				whereLike = append(whereLike, fmt.Sprintf("%s LIKE $%d", c, i))
-				whereVal = append(whereVal, "%"+v+"%")
+				metaLike = append(metaLike, fmt.Sprintf("%s LIKE $%d ESCAPE '^'", c, i))
+				whereVal = append(whereVal, "%"+replacer.Replace(v)+"%")
 				i++
 			}
+		}
+		if len(metaLike) > 0 {
+			whereLike = append(whereLike, "("+strings.Join(metaLike, operator)+")")
 		}
 	}
 
 	if len(whereVal) > 0 {
-		operator := " AND "
-		if strings.ToLower(urlQuery.Get("any")) == "true" {
-			operator = " OR "
-		}
-
 		dbQuery := fmt.Sprintf("SELECT %s FROM game WHERE %s", strings.Join(columns, ", "), strings.Join(whereLike, operator))
 
 		limit := config.SearchLimit
