@@ -66,6 +66,11 @@ type AddApp struct {
 	RunBefore       bool   `json:"runBefore"`
 }
 
+type Tag struct {
+	Aliases  []string `json:"aliases"`
+	Category string   `json:"category"`
+}
+
 type Stats struct {
 	LibraryTotals  []ColumnStats `json:"libraryTotals"`
 	FormatTotals   []ColumnStats `json:"formatTotals"`
@@ -134,6 +139,7 @@ func main() {
 
 	http.HandleFunc("/search", searchHandler)
 	http.HandleFunc("/addapps", addAppsHandler)
+	http.HandleFunc("/tags", tagsHandler)
 	http.HandleFunc("/platforms", platformsHandler)
 	http.HandleFunc("/files", filesHandler)
 	http.HandleFunc("/stats", statsHandler)
@@ -151,8 +157,7 @@ func main() {
 }
 
 func searchHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	setSharedHeadersAndLog(w, r)
+	setSharedHeadersAndLog(w, r, true)
 
 	entries := make([]Entry, 0)
 	columns := []string{"id", "title", "alternateTitles", "series", "developer", "publisher", "dateAdded", "dateModified", "platform", "playMode", "status", "notes", "source", "applicationPath", "launchCommand", "releaseDate", "version", "originalDescription", "language", "library", "activeDataOnDisk", "tagsStr"}
@@ -270,8 +275,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func addAppsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	setSharedHeadersAndLog(w, r)
+	setSharedHeadersAndLog(w, r, true)
 
 	addApps := make([]AddApp, 0)
 	urlQuery := r.URL.Query()
@@ -300,9 +304,38 @@ func addAppsHandler(w http.ResponseWriter, r *http.Request) {
 	marshalAndWrite(addApps, w)
 }
 
+func tagsHandler(w http.ResponseWriter, r *http.Request) {
+	setSharedHeadersAndLog(w, r, true)
+
+	tags := make([]Tag, 0)
+
+	rows, err := db.Query("SELECT tag_alias_concat.aliases, tag_category.name FROM (SELECT id, group_concat(name, '; ') AS aliases FROM tag_alias GROUP BY tagId) tag_alias_concat JOIN tag, tag_category ON tag_alias_concat.id = tag.primaryAliasId AND tag.categoryId = tag_category.id")
+	if err != nil {
+		errorLog.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	for rows.Next() {
+		var tag Tag
+		var aliases string
+
+		err := rows.Scan(&aliases, &tag.Category)
+		if err != sql.ErrNoRows && err != nil {
+			errorLog.Println(err)
+			break
+		}
+
+		tag.Aliases = strings.Split(aliases, "; ")
+
+		tags = append(tags, tag)
+	}
+
+	marshalAndWrite(tags, w)
+}
+
 func platformsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	setSharedHeadersAndLog(w, r)
+	setSharedHeadersAndLog(w, r, true)
 
 	platforms := make([]string, 0)
 
@@ -329,8 +362,7 @@ func platformsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func filesHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	setSharedHeadersAndLog(w, r)
+	setSharedHeadersAndLog(w, r, true)
 
 	files := make([]string, 0)
 	urlQuery := r.URL.Query()
@@ -361,8 +393,7 @@ func filesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func statsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	setSharedHeadersAndLog(w, r)
+	setSharedHeadersAndLog(w, r, true)
 
 	var stats Stats
 
@@ -409,7 +440,7 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func imageHandler(w http.ResponseWriter, r *http.Request) {
-	setSharedHeadersAndLog(w, r)
+	setSharedHeadersAndLog(w, r, false)
 
 	urlQuery := r.URL.Query()
 
@@ -492,7 +523,10 @@ func imageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func setSharedHeadersAndLog(w http.ResponseWriter, r *http.Request) {
+func setSharedHeadersAndLog(w http.ResponseWriter, r *http.Request, isJson bool) {
+	if isJson {
+		w.Header().Set("Content-Type", "application/json")
+	}
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	serverLog.Printf("serving %s to %s\n", r.URL.RequestURI(), r.Header.Get("X-Forwarded-For"))
