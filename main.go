@@ -26,6 +26,7 @@ import (
 type Config struct {
 	DatabasePath   string   `json:"databasePath"`
 	GameZipPath    string   `json:"gameZipPath"`
+	LegacyPath     string   `json:"legacyPath"`
 	ImagePath      string   `json:"imagePath"`
 	ErrorImageFile string   `json:"errorImageFile"`
 	LogFile        string   `json:"logFile"`
@@ -58,6 +59,7 @@ type Entry struct {
 	DateModified        string   `json:"dateModified"`
 	Zipped              bool     `json:"zipped"`
 }
+
 type AddApp struct {
 	ID              string `json:"id"`
 	Name            string `json:"name"`
@@ -143,6 +145,7 @@ func main() {
 	http.HandleFunc("/platforms", platformsHandler)
 	http.HandleFunc("/files", filesHandler)
 	http.HandleFunc("/stats", statsHandler)
+	http.HandleFunc("/get", getHandler)
 	http.HandleFunc("/logo", imageHandler)
 	http.HandleFunc("/screenshot", imageHandler)
 
@@ -437,6 +440,51 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	marshalAndWrite(stats, w)
+}
+
+func getHandler(w http.ResponseWriter, r *http.Request) {
+	setSharedHeadersAndLog(w, r, false)
+
+	urlQuery := r.URL.Query()
+
+	if urlQuery.Has("id") {
+		var gameZip string
+
+		row := db.QueryRow("SELECT path FROM game_data WHERE gameId = ?", urlQuery.Get("id"))
+		if err := row.Scan(&gameZip); err == nil {
+			if gameZipData, err := os.ReadFile(filepath.Join(config.GameZipPath, gameZip)); err == nil {
+				w.Header().Set("Content-Type", "application/zip")
+				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", gameZip))
+
+				w.Write(gameZipData)
+				return
+			} else {
+				errorLog.Println(err)
+			}
+		} else if err != sql.ErrNoRows {
+			errorLog.Println(err)
+		}
+	} else if urlQuery.Has("url") {
+		url := strings.TrimPrefix(urlQuery.Get("url"), "http://")
+		file := filepath.Join(config.LegacyPath, strings.ReplaceAll(url, "/", string(os.PathSeparator)))
+
+		if strings.HasPrefix(file, config.LegacyPath) {
+			if fileData, err := os.ReadFile(file); err == nil {
+				w.Header().Set("Content-Type", "application/octet-stream")
+				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", url[strings.LastIndex(url, "/")+1:]))
+
+				w.Write(fileData)
+				return
+			} else {
+				errorLog.Println(err)
+			}
+		}
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusNotFound)
 }
 
 func imageHandler(w http.ResponseWriter, r *http.Request) {
