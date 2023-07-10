@@ -163,7 +163,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 	setSharedHeadersAndLog(w, r, true)
 
 	entries := make([]Entry, 0)
-	columns := []string{"id", "title", "alternateTitles", "series", "developer", "publisher", "dateAdded", "dateModified", "platform", "playMode", "status", "notes", "source", "applicationPath", "launchCommand", "releaseDate", "version", "originalDescription", "language", "library", "activeDataOnDisk", "tagsStr"}
+	columns := []string{"id", "title", "alternateTitles", "series", "developer", "publisher", "dateAdded", "dateModified", "platformsStr", "playMode", "status", "notes", "source", "releaseDate", "version", "originalDescription", "language", "library", "tagsStr"}
 	urlQuery := r.URL.Query()
 	replacer := strings.NewReplacer("^", "^^", "%", "^%", "_", "^_")
 	operator := " AND "
@@ -188,7 +188,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	for _, c := range columns {
+	for _, c := range append(columns, "activeDataOnDisk", "launchCommand", "applicationPath") {
 		metaLike := make([]string, 0)
 		if c != "smartSearch" && len(urlQuery.Get(c)) > 0 {
 			for _, v := range strings.Split(urlQuery.Get(c), ",") {
@@ -203,7 +203,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(whereVal) > 0 {
-		dbQuery := fmt.Sprintf("SELECT %s FROM game WHERE %s", strings.Join(columns, ", "), strings.Join(whereLike, operator))
+		dbQuery := fmt.Sprintf(`SELECT * FROM (SELECT game.%s, CASE WHEN activeDataId ISNULL THEN 0 ELSE 1 END AS activeDataOnDisk, coalesce(game_data.launchCommand, game.launchCommand) AS launchCommand, coalesce(game_data.applicationPath, game.applicationPath) AS applicationPath FROM game LEFT JOIN game_data ON game.id = game_data.gameId) WHERE %s`, strings.Join(columns, ", game."), strings.Join(whereLike, operator))
 
 		limit := config.SearchLimit
 		if urlQuery.Has("limit") {
@@ -232,7 +232,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 			var entry Entry
 			var tagsStr string
 
-			err := rows.Scan(&entry.ID, &entry.Title, &entry.AlternateTitles, &entry.Series, &entry.Developer, &entry.Publisher, &entry.DateAdded, &entry.DateModified, &entry.Platform, &entry.PlayMode, &entry.Status, &entry.Notes, &entry.Source, &entry.ApplicationPath, &entry.LaunchCommand, &entry.ReleaseDate, &entry.Version, &entry.OriginalDescription, &entry.Language, &entry.Library, &entry.Zipped, &tagsStr)
+			err := rows.Scan(&entry.ID, &entry.Title, &entry.AlternateTitles, &entry.Series, &entry.Developer, &entry.Publisher, &entry.DateAdded, &entry.DateModified, &entry.Platform, &entry.PlayMode, &entry.Status, &entry.Notes, &entry.Source, &entry.ReleaseDate, &entry.Version, &entry.OriginalDescription, &entry.Language, &entry.Library, &tagsStr, &entry.Zipped, &entry.LaunchCommand, &entry.ApplicationPath)
 			if err != sql.ErrNoRows && err != nil {
 				errorLog.Println(err)
 				break
@@ -342,7 +342,7 @@ func platformsHandler(w http.ResponseWriter, r *http.Request) {
 
 	platforms := make([]string, 0)
 
-	rows, err := db.Query("SELECT platform FROM game GROUP BY platform")
+	rows, err := db.Query("SELECT name FROM platform_alias")
 	if err != nil {
 		errorLog.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -400,43 +400,37 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
 
 	var stats Stats
 
-	stats.LibraryTotals = make([]ColumnStats, 0)
-	stats.FormatTotals = make([]ColumnStats, 0)
-	stats.PlatformTotals = make([]ColumnStats, 0)
-
-	if err := addStat("library", &stats.LibraryTotals); err != http.StatusFound {
-		w.WriteHeader(err)
-		return
+	queries := [3]string{
+		"SELECT library, COUNT(*) FROM game GROUP BY library",
+		"SELECT CASE WHEN activeDataId ISNULL THEN 'legacy' ELSE 'gameZip' END AS format, COUNT(*) FROM game GROUP BY format",
+		"SELECT platform_alias.name, COUNT(*) FROM game_platforms_platform JOIN platform_alias ON game_platforms_platform.platformId = platform_alias.platformId GROUP BY game_platforms_platform.platformId",
 	}
-	if err := addStat("platform", &stats.PlatformTotals); err != http.StatusFound {
-		w.WriteHeader(err)
-		return
+	totals := [3]*[]ColumnStats{
+		&stats.LibraryTotals,
+		&stats.FormatTotals,
+		&stats.PlatformTotals,
 	}
 
-	formatRows, err := db.Query("SELECT activeDataOnDisk, COUNT(*) FROM game GROUP BY activeDataOnDisk")
-	if err != nil {
-		errorLog.Println(err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
+	for i := 0; i < 3; i++ {
+		*totals[i] = make([]ColumnStats, 0)
 
-	for formatRows.Next() {
-		var formatStats ColumnStats
-		var activeDataOnDisk bool
-
-		err := formatRows.Scan(&activeDataOnDisk, &formatStats.Count)
-		if err != sql.ErrNoRows && err != nil {
+		rows, err := db.Query(queries[i])
+		if err != nil {
 			errorLog.Println(err)
-			break
+			w.WriteHeader(http.StatusInternalServerError)
 		}
 
-		if activeDataOnDisk {
-			formatStats.Name = "gameZip"
-		} else {
-			formatStats.Name = "legacy"
-		}
+		for rows.Next() {
+			var columnStats ColumnStats
 
-		stats.FormatTotals = append(stats.FormatTotals, formatStats)
+			err := rows.Scan(&columnStats.Name, &columnStats.Count)
+			if err != sql.ErrNoRows && err != nil {
+				errorLog.Println(err)
+				break
+			}
+
+			*totals[i] = append(*totals[i], columnStats)
+		}
 	}
 
 	marshalAndWrite(stats, w)
@@ -589,26 +583,4 @@ func marshalAndWrite(object any, w http.ResponseWriter) {
 	}
 
 	w.Write(data)
-}
-
-func addStat(column string, destination *[]ColumnStats) int {
-	rows, err := db.Query(fmt.Sprintf("SELECT %[1]s, COUNT(*) FROM game GROUP BY %[1]s", column))
-	if err != nil {
-		errorLog.Println(err)
-		return http.StatusInternalServerError
-	}
-
-	for rows.Next() {
-		var stats ColumnStats
-
-		err := rows.Scan(&stats.Name, &stats.Count)
-		if err != sql.ErrNoRows && err != nil {
-			errorLog.Println(err)
-			break
-		}
-
-		*destination = append(*destination, stats)
-	}
-
-	return http.StatusFound
 }
