@@ -494,7 +494,7 @@ func imageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var imageFile string
-	if id := urlQuery.Get("id"); len(id) == 36 {
+	if id := urlQuery.Get("id"); len(id) == 36 && !strings.ContainsAny(id, "/\\.") {
 		imageFile = filepath.Join(config.ImagePath, imageDir, id[0:2], id[2:4], id+".png")
 	} else {
 		imageFile = config.ErrorImageFile
