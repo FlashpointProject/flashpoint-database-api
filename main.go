@@ -35,30 +35,23 @@ type Config struct {
 	Filter         []string `json:"filter"`
 }
 
-type Entry struct {
-	ID                  string   `json:"id"`
-	Library             string   `json:"library"`
-	Title               string   `json:"title"`
-	AlternateTitles     string   `json:"alternateTitles"`
-	Series              string   `json:"series"`
-	Developer           string   `json:"developer"`
-	Publisher           string   `json:"publisher"`
-	Source              string   `json:"source"`
-	Tags                []string `json:"tags"`
-	Platform            string   `json:"platform"`
-	PlayMode            string   `json:"playMode"`
-	Status              string   `json:"status"`
-	Version             string   `json:"version"`
-	ReleaseDate         string   `json:"releaseDate"`
-	Language            string   `json:"language"`
-	Notes               string   `json:"notes"`
-	OriginalDescription string   `json:"originalDescription"`
-	ApplicationPath     string   `json:"applicationPath"`
-	LaunchCommand       string   `json:"launchCommand"`
-	DateAdded           string   `json:"dateAdded"`
-	DateModified        string   `json:"dateModified"`
-	Zipped              bool     `json:"zipped"`
+type Fields struct {
+	Names      []string
+	Columns    []string
+	Queries    []string
+	NeedsMerge []bool
+	Types      []int
 }
+
+var fields = Fields{
+	[]string{"id", "library", "title", "alternateTitles", "series", "developer", "publisher", "source", "tags", "platform", "playMode", "status", "version", "releaseDate", "language", "notes", "originalDescription", "applicationPath", "launchCommand", "dateAdded", "dateModified", "zipped"},
+	[]string{"id", "library", "title", "alternateTitles", "series", "developer", "publisher", "source", "tagsStr", "platformsStr", "playMode", "status", "version", "releaseDate", "language", "notes", "originalDescription", "applicationPath", "launchCommand", "dateAdded", "dateModified", "activeDataOnDisk"},
+	[]string{"game.id", "game.library", "game.title", "game.alternateTitles", "game.series", "game.developer", "game.publisher", "game.source", "game.tagsStr", "game.platformsStr", "game.playMode", "game.status", "game.version", "game.releaseDate", "game.language", "game.notes", "game.originalDescription", "coalesce(game_data.applicationPath, game.applicationPath) AS applicationPath", "coalesce(game_data.launchCommand, game.launchCommand) AS launchCommand", "game.dateAdded", "game.dateModified", `CASE WHEN activeDataId ISNULL THEN "false" ELSE "true" END AS activeDataOnDisk`},
+	[]bool{false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, true},
+	[]int{0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2},
+}
+var queryReplacer = strings.NewReplacer("^", "^^", "%", "^%", "_", "^_")
+var tagsIndex = slices.Index(fields.Names, "tags")
 
 type AddApp struct {
 	ID              string `json:"id"`
@@ -162,10 +155,9 @@ func main() {
 func searchHandler(w http.ResponseWriter, r *http.Request) {
 	setSharedHeadersAndLog(w, r, true)
 
-	entries := make([]Entry, 0)
-	columns := []string{"id", "title", "alternateTitles", "series", "developer", "publisher", "dateAdded", "dateModified", "platformsStr", "playMode", "status", "notes", "source", "releaseDate", "version", "originalDescription", "language", "library", "tagsStr"}
+	jsonObjects := make([]string, 0)
+
 	urlQuery := r.URL.Query()
-	replacer := strings.NewReplacer("^", "^^", "%", "^%", "_", "^_")
 	operator := " AND "
 	if strings.ToLower(urlQuery.Get("any")) == "true" {
 		operator = " OR "
@@ -173,28 +165,26 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 
 	whereLike := make([]string, 0)
 	whereVal := make([]string, 0)
-	i := 1
+	param := 1
 
 	if len(urlQuery.Get("smartSearch")) > 0 {
 		for _, v := range strings.Split(urlQuery.Get("smartSearch"), ",") {
-			smartCols := []string{"title", "alternateTitles", "series", "developer", "publisher"}
 			smartLike := make([]string, 0)
-			for _, c := range smartCols {
-				smartLike = append(smartLike, fmt.Sprintf("%s LIKE $%d ESCAPE '^'", c, i))
+			for _, s := range []int{2, 3, 4, 5, 6} {
+				smartLike = append(smartLike, fmt.Sprintf("%s LIKE $%d ESCAPE '^'", fields.Names[s], param))
 			}
-			whereVal = append(whereVal, "%"+replacer.Replace(v)+"%")
+			whereVal = append(whereVal, "%"+queryReplacer.Replace(v)+"%")
 			whereLike = append(whereLike, "("+strings.Join(smartLike, " OR ")+")")
-			i++
+			param++
 		}
 	}
-
-	for _, c := range append(columns, "activeDataOnDisk", "launchCommand", "applicationPath") {
+	for i, c := range fields.Names {
 		metaLike := make([]string, 0)
-		if c != "smartSearch" && len(urlQuery.Get(c)) > 0 {
+		if len(urlQuery.Get(c)) > 0 {
 			for _, v := range strings.Split(urlQuery.Get(c), ",") {
-				metaLike = append(metaLike, fmt.Sprintf("%s LIKE $%d ESCAPE '^'", c, i))
-				whereVal = append(whereVal, "%"+replacer.Replace(v)+"%")
-				i++
+				metaLike = append(metaLike, fmt.Sprintf("%s LIKE $%d ESCAPE '^'", fields.Columns[i], param))
+				whereVal = append(whereVal, "%"+queryReplacer.Replace(v)+"%")
+				param++
 			}
 		}
 		if len(metaLike) > 0 {
@@ -203,16 +193,52 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(whereVal) > 0 {
-		dbQuery := fmt.Sprintf(`SELECT * FROM (SELECT game.%s, CASE WHEN activeDataId ISNULL THEN 0 ELSE 1 END AS activeDataOnDisk, coalesce(game_data.launchCommand, game.launchCommand) AS launchCommand, coalesce(game_data.applicationPath, game.applicationPath) AS applicationPath FROM game LEFT JOIN game_data ON game.id = game_data.gameId) WHERE %s`, strings.Join(columns, ", game."), strings.Join(whereLike, operator))
+		outputIndices := make([]int, 0)
+		if urlQuery.Has("fields") {
+			for _, c := range strings.Split(urlQuery.Get("fields"), ",") {
+				if i := slices.Index(fields.Names, strings.ToLower(c)); i != -1 {
+					outputIndices = append(outputIndices, i)
+				}
+			}
+		}
+		if len(outputIndices) == 0 {
+			for i := range fields.Names {
+				outputIndices = append(outputIndices, i)
+			}
+		}
+
+		outputTagsIndex := -1
+		outputTagsAppend := false
+		if outputTagsIndex = slices.Index(outputIndices, tagsIndex); outputTagsIndex == -1 {
+			outputIndices = append(outputIndices, tagsIndex)
+			outputTagsIndex = len(outputIndices) - 1
+			outputTagsAppend = true
+		}
+
+		outputFields := make([]string, 0)
+		for _, i := range outputIndices {
+			outputFields = append(outputFields, fields.Columns[i])
+		}
+
+		var dbQuery string
+		for _, i := range outputIndices {
+			if fields.NeedsMerge[i] {
+				dbQuery = fmt.Sprintf(`SELECT %s FROM (SELECT %s FROM game LEFT JOIN game_data ON game.id=game_data.gameId) WHERE %s`, strings.Join(outputFields, ","), strings.Join(fields.Queries, ","), strings.Join(whereLike, operator))
+				break
+			}
+		}
+		if dbQuery == "" {
+			dbQuery = fmt.Sprintf(`SELECT %s FROM game WHERE %s`, strings.Join(outputFields, ","), strings.Join(whereLike, operator))
+		}
 
 		limit := config.SearchLimit
 		if urlQuery.Has("limit") {
 			i, err := strconv.Atoi(urlQuery.Get("limit"))
-			if err == nil && i > 0 && i < limit {
+			if err == nil && i > 0 && (config.SearchLimit == -1 || i < limit) {
 				limit = i
 			}
 		}
-		if limit > 0 && config.SearchLimit > 0 {
+		if limit > 0 {
 			dbQuery += fmt.Sprintf(" LIMIT %d", limit)
 		}
 
@@ -229,20 +255,22 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for rows.Next() {
-			var entry Entry
-			var tagsStr string
+			entry := make([]string, len(outputIndices))
+			pipe := make([]interface{}, len(outputIndices))
+			for i := range pipe {
+				pipe[i] = &entry[i]
+			}
 
-			err := rows.Scan(&entry.ID, &entry.Title, &entry.AlternateTitles, &entry.Series, &entry.Developer, &entry.Publisher, &entry.DateAdded, &entry.DateModified, &entry.Platform, &entry.PlayMode, &entry.Status, &entry.Notes, &entry.Source, &entry.ReleaseDate, &entry.Version, &entry.OriginalDescription, &entry.Language, &entry.Library, &tagsStr, &entry.Zipped, &entry.LaunchCommand, &entry.ApplicationPath)
+			err := rows.Scan(pipe...)
 			if err != sql.ErrNoRows && err != nil {
 				errorLog.Println(err)
 				break
 			}
 
-			entry.Tags = strings.Split(tagsStr, "; ")
-
+			tags := strings.Split(entry[outputTagsIndex], "; ")
 			filtered := false
 			if strings.ToLower(urlQuery.Get("filter")) == "true" {
-				for _, v := range entry.Tags {
+				for _, v := range tags {
 					if slices.Contains(config.Filter, v) {
 						filtered = true
 						break
@@ -250,31 +278,56 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			tags := strings.Split(urlQuery.Get("tagsStr"), ",")
-			if len(tags) > 0 {
-				entryTagsLower := make([]string, len(entry.Tags))
-				for i := range entry.Tags {
-					entryTagsLower = append(entryTagsLower, strings.ToLower(entry.Tags[i]))
-				}
-
-				for _, v := range tags {
-					containsTag := slices.Contains(entryTagsLower, strings.ToLower(v))
-					if operator == " AND " && !containsTag {
-						filtered = true
-						break
-					} else if operator == " OR " && containsTag {
-						break
+			if !filtered && urlQuery.Has("tagsStr") {
+				if queryTags := strings.Split(urlQuery.Get("tagsStr"), ","); len(queryTags) > 0 {
+					tagsLower := make([]string, len(tags))
+					for _, t := range tags {
+						tagsLower = append(tagsLower, strings.ToLower(t))
+					}
+					for _, t := range queryTags {
+						containsTag := slices.Contains(tagsLower, strings.ToLower(t))
+						if operator == " AND " && !containsTag {
+							filtered = true
+							break
+						} else if operator == " OR " && containsTag {
+							break
+						}
 					}
 				}
 			}
 
-			if !filtered {
-				entries = append(entries, entry)
+			if filtered {
+				continue
+			} else if outputTagsAppend {
+				entry = entry[:len(entry)-1]
 			}
+
+			jsonObject := "{"
+			for i, v := range entry {
+				fieldIndex := outputIndices[i]
+				if jsonValue, err := json.Marshal(v); err == nil {
+					jsonObject += `"` + fields.Names[fieldIndex] + `":`
+					switch fields.Types[fieldIndex] {
+					case 1:
+						jsonObject += "[" + strings.ReplaceAll(string(jsonValue), "; ", `","`) + "]"
+					case 2:
+						jsonObject += strings.Trim(string(jsonValue), `"`)
+					default:
+						jsonObject += string(jsonValue)
+					}
+				}
+				if i != len(entry)-1 {
+					jsonObject += ","
+				}
+			}
+			jsonObject += "}"
+
+			jsonObjects = append(jsonObjects, jsonObject)
 		}
 	}
 
-	marshalAndWrite(entries, w)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte("[" + strings.Join(jsonObjects, ",") + "]"))
 }
 
 func addAppsHandler(w http.ResponseWriter, r *http.Request) {
