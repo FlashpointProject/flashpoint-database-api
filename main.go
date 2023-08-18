@@ -196,7 +196,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 		outputIndices := make([]int, 0)
 		if urlQuery.Has("fields") {
 			for _, c := range strings.Split(urlQuery.Get("fields"), ",") {
-				if i := slices.Index(fields.Names, strings.ToLower(c)); i != -1 {
+				if i := slices.Index(fields.Names, c); i != -1 {
 					outputIndices = append(outputIndices, i)
 				}
 			}
