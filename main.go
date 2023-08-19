@@ -169,11 +169,12 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 
 	param := 1
 
-	if len(urlQuery.Get("smartSearch")) > 0 {
+	if urlQuery.Get("smartSearch") != "" {
 		for _, v := range strings.Split(urlQuery.Get("smartSearch"), ",") {
 			smartLike := make([]string, 0)
-			for _, s := range []int{2, 3, 4, 5, 6} {
-				smartLike = append(smartLike, fmt.Sprintf("%s LIKE $%d ESCAPE '^'", fields.Names[s], param))
+			for _, i := range []int{2, 3, 4, 5, 6} {
+				smartLike = append(smartLike, fmt.Sprintf("%s LIKE $%d ESCAPE '^'", fields.Names[i], param))
+				outputQueries = append(outputQueries, fields.Queries[i])
 			}
 			whereVal = append(whereVal, "%"+queryReplacer.Replace(v)+"%")
 			whereLike = append(whereLike, "("+strings.Join(smartLike, " OR ")+")")
@@ -188,7 +189,9 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 				whereVal = append(whereVal, "%"+queryReplacer.Replace(v)+"%")
 				param++
 			}
-			outputQueries = append(outputQueries, fields.Queries[i])
+			if !slices.Contains(outputQueries, fields.Queries[i]) {
+				outputQueries = append(outputQueries, fields.Queries[i])
+			}
 		}
 		if len(metaLike) > 0 {
 			whereLike = append(whereLike, "("+strings.Join(metaLike, operator)+")")
@@ -222,7 +225,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 
 		for _, i := range outputIndices {
 			outputColumns = append(outputColumns, fields.Columns[i])
-			if urlQuery.Get(fields.Names[i]) == "" {
+			if !slices.Contains(outputQueries, fields.Queries[i]) {
 				outputQueries = append(outputQueries, fields.Queries[i])
 			}
 		}
