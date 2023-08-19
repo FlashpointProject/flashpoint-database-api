@@ -165,6 +165,8 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 
 	whereLike := make([]string, 0)
 	whereVal := make([]string, 0)
+	outputQueries := make([]string, 0)
+
 	param := 1
 
 	if len(urlQuery.Get("smartSearch")) > 0 {
@@ -180,12 +182,13 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	for i, c := range fields.Names {
 		metaLike := make([]string, 0)
-		if len(urlQuery.Get(c)) > 0 {
+		if urlQuery.Get(c) != "" {
 			for _, v := range strings.Split(urlQuery.Get(c), ",") {
 				metaLike = append(metaLike, fmt.Sprintf("%s LIKE $%d ESCAPE '^'", fields.Columns[i], param))
 				whereVal = append(whereVal, "%"+queryReplacer.Replace(v)+"%")
 				param++
 			}
+			outputQueries = append(outputQueries, fields.Queries[i])
 		}
 		if len(metaLike) > 0 {
 			whereLike = append(whereLike, "("+strings.Join(metaLike, operator)+")")
@@ -194,6 +197,8 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 
 	if len(whereVal) > 0 {
 		outputIndices := make([]int, 0)
+		outputColumns := make([]string, 0)
+
 		if urlQuery.Has("fields") {
 			for _, c := range strings.Split(urlQuery.Get("fields"), ",") {
 				if i := slices.Index(fields.Names, c); i != -1 {
@@ -215,21 +220,22 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 			outputTagsAppend = true
 		}
 
-		outputFields := make([]string, 0)
 		for _, i := range outputIndices {
-			outputFields = append(outputFields, fields.Columns[i])
+			outputColumns = append(outputColumns, fields.Columns[i])
+			if urlQuery.Get(fields.Names[i]) == "" {
+				outputQueries = append(outputQueries, fields.Queries[i])
+			}
 		}
 
 		var dbQuery string
-		for _, i := range outputIndices {
-			if fields.NeedsMerge[i] {
-				dbQuery = fmt.Sprintf(`SELECT %s FROM (SELECT %s FROM game LEFT JOIN game_data ON game.id=game_data.gameId) WHERE %s`, strings.Join(outputFields, ","), strings.Join(fields.Queries, ","), strings.Join(whereLike, operator))
+		var mergeText string
+		for i, q := range fields.Queries {
+			if fields.NeedsMerge[i] && slices.Contains(outputQueries, q) {
+				mergeText = " LEFT JOIN game_data ON game.id=game_data.gameId"
 				break
 			}
 		}
-		if dbQuery == "" {
-			dbQuery = fmt.Sprintf(`SELECT %s FROM game WHERE %s`, strings.Join(outputFields, ","), strings.Join(whereLike, operator))
-		}
+		dbQuery = fmt.Sprintf(`SELECT %s FROM (SELECT %s FROM game%s) WHERE %s`, strings.Join(outputColumns, ","), strings.Join(outputQueries, ","), mergeText, strings.Join(whereLike, operator))
 
 		limit := config.SearchLimit
 		if urlQuery.Has("limit") {
