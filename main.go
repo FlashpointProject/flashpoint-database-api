@@ -143,7 +143,7 @@ func main() {
 	http.HandleFunc("/screenshot", imageHandler)
 
 	server := &http.Server{
-		Addr:         "127.0.0.1:8986",
+		Addr:         "0.0.0.0:8986",
 		WriteTimeout: 15 * time.Second,
 		ReadTimeout:  15 * time.Second,
 	}
