@@ -44,11 +44,11 @@ type Fields struct {
 }
 
 var fields = Fields{
-	[]string{"id", "library", "title", "alternateTitles", "series", "developer", "publisher", "source", "tags", "platform", "playMode", "status", "version", "releaseDate", "language", "notes", "originalDescription", "applicationPath", "launchCommand", "dateAdded", "dateModified", "zipped"},
-	[]string{"id", "library", "title", "alternateTitles", "series", "developer", "publisher", "source", "tagsStr", "platformsStr", "playMode", "status", "version", "releaseDate", "language", "notes", "originalDescription", "applicationPath", "launchCommand", "dateAdded", "dateModified", "activeDataOnDisk"},
-	[]string{"game.id", "game.library", "game.title", "game.alternateTitles", "game.series", "game.developer", "game.publisher", "game.source", "game.tagsStr", "game.platformsStr", "game.playMode", "game.status", "game.version", "game.releaseDate", "game.language", "game.notes", "game.originalDescription", "coalesce(game_data.applicationPath, game.applicationPath) AS applicationPath", "coalesce(game_data.launchCommand, game.launchCommand) AS launchCommand", "game.dateAdded", "game.dateModified", `CASE WHEN activeDataId ISNULL THEN "false" ELSE "true" END AS activeDataOnDisk`},
-	[]bool{false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, true},
-	[]int{0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2},
+	[]string{"id", "library", "title", "alternateTitles", "series", "developer", "publisher", "source", "tags", "platform", "playMode", "status", "version", "releaseDate", "language", "notes", "originalDescription", "dateAdded", "dateModified", "applicationPath", "launchCommand", "fileName"},
+	[]string{"id", "library", "title", "alternateTitles", "series", "developer", "publisher", "source", "tagsStr", "platformsStr", "playMode", "status", "version", "releaseDate", "language", "notes", "originalDescription", "dateAdded", "dateModified", "applicationPath", "launchCommand", "path"},
+	[]string{"game.id", "game.library", "game.title", "game.alternateTitles", "game.series", "game.developer", "game.publisher", "game.source", "game.tagsStr", "game.platformsStr", "game.playMode", "game.status", "game.version", "game.releaseDate", "game.language", "game.notes", "game.originalDescription", "game.dateAdded", "game.dateModified", "coalesce(game_data.applicationPath, game.applicationPath) AS applicationPath", "coalesce(game_data.launchCommand, game.launchCommand) AS launchCommand", `IFNULL(path, "") AS path`},
+	[]bool{false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true},
+	[]int{0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 }
 var queryReplacer = strings.NewReplacer("^", "^^", "%", "^%", "_", "^_")
 var tagsIndex = slices.Index(fields.Names, "tags")
@@ -136,11 +136,18 @@ func main() {
 	http.HandleFunc("/addapps", addAppsHandler)
 	http.HandleFunc("/tags", tagsHandler)
 	http.HandleFunc("/platforms", platformsHandler)
-	http.HandleFunc("/files", filesHandler)
 	http.HandleFunc("/stats", statsHandler)
-	http.HandleFunc("/get", getHandler)
-	http.HandleFunc("/logo", imageHandler)
-	http.HandleFunc("/screenshot", imageHandler)
+
+	if config.GameZipPath != "" || config.LegacyPath != "" {
+		http.HandleFunc("/get", getHandler)
+	}
+	if config.GameZipPath != "" {
+		http.HandleFunc("/files", filesHandler)
+	}
+	if config.ImagePath != "" {
+		http.HandleFunc("/logo", imageHandler)
+		http.HandleFunc("/screenshot", imageHandler)
+	}
 
 	server := &http.Server{
 		Addr:         "0.0.0.0:8986",
@@ -503,7 +510,7 @@ func getHandler(w http.ResponseWriter, r *http.Request) {
 
 	urlQuery := r.URL.Query()
 
-	if urlQuery.Has("id") {
+	if urlQuery.Has("id") && config.GameZipPath != "" {
 		var gameZip string
 
 		row := db.QueryRow("SELECT path FROM game_data WHERE gameId = ?", urlQuery.Get("id"))
@@ -520,7 +527,7 @@ func getHandler(w http.ResponseWriter, r *http.Request) {
 		} else if err != sql.ErrNoRows {
 			errorLog.Println(err)
 		}
-	} else if urlQuery.Has("url") {
+	} else if urlQuery.Has("url") && config.LegacyPath != "" {
 		url := strings.TrimPrefix(urlQuery.Get("url"), "http://")
 		file := filepath.Join(config.LegacyPath, strings.ReplaceAll(url, "/", string(os.PathSeparator)))
 
