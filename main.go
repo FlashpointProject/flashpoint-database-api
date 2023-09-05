@@ -44,11 +44,11 @@ type Fields struct {
 }
 
 var fields = Fields{
-	[]string{"id", "library", "title", "alternateTitles", "series", "developer", "publisher", "source", "tags", "platform", "playMode", "status", "version", "releaseDate", "language", "notes", "originalDescription", "dateAdded", "dateModified", "applicationPath", "launchCommand", "fileName"},
-	[]string{"id", "library", "title", "alternateTitles", "series", "developer", "publisher", "source", "tagsStr", "platformsStr", "playMode", "status", "version", "releaseDate", "language", "notes", "originalDescription", "dateAdded", "dateModified", "applicationPath", "launchCommand", "path"},
-	[]string{"game.id", "game.library", "game.title", "game.alternateTitles", "game.series", "game.developer", "game.publisher", "game.source", "game.tagsStr", "game.platformsStr", "game.playMode", "game.status", "game.version", "game.releaseDate", "game.language", "game.notes", "game.originalDescription", "game.dateAdded", "game.dateModified", "coalesce(game_data.applicationPath, game.applicationPath) AS applicationPath", "coalesce(game_data.launchCommand, game.launchCommand) AS launchCommand", `IFNULL(path, "") AS path`},
+	[]string{"id", "library", "title", "alternateTitles", "series", "developer", "publisher", "source", "tags", "platform", "playMode", "status", "version", "releaseDate", "language", "notes", "originalDescription", "dateAdded", "dateModified", "applicationPath", "launchCommand", "zipped"},
+	[]string{"id", "library", "title", "alternateTitles", "series", "developer", "publisher", "source", "tagsStr", "platformsStr", "playMode", "status", "version", "releaseDate", "language", "notes", "originalDescription", "dateAdded", "dateModified", "applicationPath", "launchCommand", "activeDataOnDisk"},
+	[]string{"game.id", "game.library", "game.title", "game.alternateTitles", "game.series", "game.developer", "game.publisher", "game.source", "game.tagsStr", "game.platformsStr", "game.playMode", "game.status", "game.version", "game.releaseDate", "game.language", "game.notes", "game.originalDescription", "game.dateAdded", "game.dateModified", "coalesce(game_data.applicationPath, game.applicationPath) AS applicationPath", "coalesce(game_data.launchCommand, game.launchCommand) AS launchCommand", `CASE WHEN activeDataId ISNULL THEN "false" ELSE "true" END AS activeDataOnDisk`},
 	[]bool{false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true},
-	[]int{0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	[]int{0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2},
 }
 var queryReplacer = strings.NewReplacer("^", "^^", "%", "^%", "_", "^_")
 var tagsIndex = slices.Index(fields.Names, "tags")
