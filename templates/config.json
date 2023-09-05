@@ -6,8 +6,234 @@
   "errorImageFile": "404.png",
   "logFile": "server.log",
   "logActivity": true,
-  "searchLimit": 1000,
-  "filter": [
-    "LEGACY-Extreme"
+  "searchLimit": -1,
+  "metadataFields": [
+    {
+      "name": "id",
+      "columnName": "id",
+      "query": "game.id",
+      "dataTable": false,
+      "type": "string"
+    },
+    {
+      "name": "library",
+      "columnName": "library",
+      "query": "game.library",
+      "dataTable": false,
+      "type": "string"
+    },
+    {
+      "name": "title",
+      "columnName": "title",
+      "query": "game.title",
+      "dataTable": false,
+      "type": "string"
+    },
+    {
+      "name": "alternateTitles",
+      "columnName": "alternateTitles",
+      "query": "game.alternateTitles",
+      "dataTable": false,
+      "type": "string"
+    },
+    {
+      "name": "series",
+      "columnName": "series",
+      "query": "game.series",
+      "dataTable": false,
+      "type": "string"
+    },
+    {
+      "name": "developer",
+      "columnName": "developer",
+      "query": "game.developer",
+      "dataTable": false,
+      "type": "string"
+    },
+    {
+      "name": "publisher",
+      "columnName": "publisher",
+      "query": "game.publisher",
+      "dataTable": false,
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "columnName": "source",
+      "query": "game.source",
+      "dataTable": false,
+      "type": "string"
+    },
+    {
+      "name": "tags",
+      "columnName": "tagsStr",
+      "query": "game.tagsStr",
+      "dataTable": false,
+      "type": "array"
+    },
+    {
+      "name": "platform",
+      "columnName": "platformsStr",
+      "query": "game.platformsStr",
+      "dataTable": false,
+      "type": "string"
+    },
+    {
+      "name": "playMode",
+      "columnName": "playMode",
+      "query": "game.playMode",
+      "dataTable": false,
+      "type": "string"
+    },
+    {
+      "name": "status",
+      "columnName": "status",
+      "query": "game.status",
+      "dataTable": false,
+      "type": "string"
+    },
+    {
+      "name": "version",
+      "columnName": "version",
+      "query": "game.version",
+      "dataTable": false,
+      "type": "string"
+    },
+    {
+      "name": "releaseDate",
+      "columnName": "releaseDate",
+      "query": "game.releaseDate",
+      "dataTable": false,
+      "type": "string"
+    },
+    {
+      "name": "language",
+      "columnName": "language",
+      "query": "game.language",
+      "dataTable": false,
+      "type": "string"
+    },
+    {
+      "name": "notes",
+      "columnName": "notes",
+      "query": "game.notes",
+      "dataTable": false,
+      "type": "string"
+    },
+    {
+      "name": "originalDescription",
+      "columnName": "originalDescription",
+      "query": "game.originalDescription",
+      "dataTable": false,
+      "type": "string"
+    },
+    {
+      "name": "dateAdded",
+      "columnName": "dateAdded",
+      "query": "game.dateAdded",
+      "dataTable": false,
+      "type": "string"
+    },
+    {
+      "name": "dateModified",
+      "columnName": "dateModified",
+      "query": "game.dateModified",
+      "dataTable": false,
+      "type": "string"
+    },
+    {
+      "name": "applicationPath",
+      "columnName": "applicationPath",
+      "query": "coalesce(game_data.applicationPath, game.applicationPath) AS applicationPath",
+      "dataTable": true,
+      "type": "string"
+    },
+    {
+      "name": "launchCommand",
+      "columnName": "launchCommand",
+      "query": "coalesce(game_data.launchCommand, game.launchCommand) AS launchCommand",
+      "dataTable": true,
+      "type": "string"
+    },
+    {
+      "name": "zipped",
+      "columnName": "activeDataOnDisk",
+      "query": "CASE WHEN activeDataId ISNULL THEN \"false\" ELSE \"true\" END AS activeDataOnDisk",
+      "dataTable": true,
+      "type": "bool"
+    }
+  ],
+  "filteredTags": [
+    "Adult",
+    "Ambiguous Penetration",
+    "Anal Insertion",
+    "Anal",
+    "Andromorph",
+    "Anilingus",
+    "BDSM",
+    "Bestiality",
+    "Breast Milking",
+    "Cannibalism",
+    "Cannibalism",
+    "Cartoon Porn",
+    "Cunnilingus",
+    "Enema",
+    "Enema",
+    "Fellatio",
+    "Fingering",
+    "Fisting",
+    "Flatulence",
+    "Footjob",
+    "Frottage",
+    "Futanari",
+    "Gloryhole",
+    "Gore",
+    "Group",
+    "Gynomorph",
+    "Handjob",
+    "Hentai",
+    "Homophobia",
+    "Hypnosis",
+    "Incest",
+    "Infantilism",
+    "Inflation",
+    "Intersex",
+    "Interspecies",
+    "Kabeshiri",
+    "LEGACY-Extreme",
+    "Macrophilia",
+    "Male Futanari",
+    "Masturbation",
+    "Multiple Penises",
+    "Necrophilia",
+    "Obesity",
+    "Oral",
+    "Oviposition",
+    "Paizuri",
+    "Podophilia",
+    "Porn",
+    "Pregnancy",
+    "Quicksand",
+    "Racism",
+    "Scat",
+    "Sex Toys",
+    "Sexual Content",
+    "Sexual Violence",
+    "Solo",
+    "Spanking",
+    "Stereotyping",
+    "Strong Language",
+    "Strong Violence",
+    "Tentacles",
+    "Tickling",
+    "Touching",
+    "Transphobia",
+    "Tribadism",
+    "Urination",
+    "Vaginal Insertion",
+    "Vaginal",
+    "Vomit",
+    "Vore",
+    "Weight Gain"
   ]
 }

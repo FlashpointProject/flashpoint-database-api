@@ -32,26 +32,29 @@ type Config struct {
 	LogFile        string   `json:"logFile"`
 	LogActivity    bool     `json:"logActivity"`
 	SearchLimit    int      `json:"searchLimit"`
-	Filter         []string `json:"filter"`
+	MetadataFields []Field  `json:"metadataFields"`
+	FilteredTags   []string `json:"filteredTags"`
 }
 
-type Fields struct {
-	Names      []string
-	Columns    []string
-	Queries    []string
-	NeedsMerge []bool
-	Types      []int
+type Field struct {
+	Name       string `json:"name"`
+	ColumnName string `json:"columnName"`
+	Query      string `json:"query"`
+	DataTable  bool   `json:"dataTable"`
+	Type       string `json:"type"`
+}
+type FieldIterator struct {
+	Name       []string
+	ColumnName []string
+	Query      []string
+	DataTable  []bool
+	Type       []string
 }
 
-var fields = Fields{
-	[]string{"id", "library", "title", "alternateTitles", "series", "developer", "publisher", "source", "tags", "platform", "playMode", "status", "version", "releaseDate", "language", "notes", "originalDescription", "dateAdded", "dateModified", "applicationPath", "launchCommand", "zipped"},
-	[]string{"id", "library", "title", "alternateTitles", "series", "developer", "publisher", "source", "tagsStr", "platformsStr", "playMode", "status", "version", "releaseDate", "language", "notes", "originalDescription", "dateAdded", "dateModified", "applicationPath", "launchCommand", "activeDataOnDisk"},
-	[]string{"game.id", "game.library", "game.title", "game.alternateTitles", "game.series", "game.developer", "game.publisher", "game.source", "game.tagsStr", "game.platformsStr", "game.playMode", "game.status", "game.version", "game.releaseDate", "game.language", "game.notes", "game.originalDescription", "game.dateAdded", "game.dateModified", "coalesce(game_data.applicationPath, game.applicationPath) AS applicationPath", "coalesce(game_data.launchCommand, game.launchCommand) AS launchCommand", `CASE WHEN activeDataId ISNULL THEN "false" ELSE "true" END AS activeDataOnDisk`},
-	[]bool{false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true},
-	[]int{0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2},
-}
+var fieldIterator FieldIterator
+var tagsIndex int
+
 var queryReplacer = strings.NewReplacer("^", "^^", "%", "^%", "_", "^_")
-var tagsIndex = slices.Index(fields.Names, "tags")
 
 type AddApp struct {
 	ID              string `json:"id"`
@@ -92,6 +95,15 @@ func main() {
 	} else {
 		log.Println("loaded config.json")
 	}
+
+	for _, f := range config.MetadataFields {
+		fieldIterator.Name = append(fieldIterator.Name, f.Name)
+		fieldIterator.ColumnName = append(fieldIterator.ColumnName, f.ColumnName)
+		fieldIterator.Query = append(fieldIterator.Query, f.Query)
+		fieldIterator.DataTable = append(fieldIterator.DataTable, f.DataTable)
+		fieldIterator.Type = append(fieldIterator.Type, f.Type)
+	}
+	tagsIndex = slices.Index(fieldIterator.Name, "tags")
 
 	var dbErr error
 	db, dbErr = sql.Open("sqlite3", config.DatabasePath)
@@ -180,24 +192,24 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 		for _, v := range strings.Split(urlQuery.Get("smartSearch"), ",") {
 			smartLike := make([]string, 0)
 			for _, i := range []int{2, 3, 4, 5, 6} {
-				smartLike = append(smartLike, fmt.Sprintf("%s LIKE $%d ESCAPE '^'", fields.Names[i], param))
-				outputQueries = append(outputQueries, fields.Queries[i])
+				smartLike = append(smartLike, fmt.Sprintf("%s LIKE $%d ESCAPE '^'", fieldIterator.Name[i], param))
+				outputQueries = append(outputQueries, fieldIterator.Query[i])
 			}
 			whereVal = append(whereVal, "%"+queryReplacer.Replace(v)+"%")
 			whereLike = append(whereLike, "("+strings.Join(smartLike, " OR ")+")")
 			param++
 		}
 	}
-	for i, c := range fields.Names {
+	for i, c := range fieldIterator.Name {
 		metaLike := make([]string, 0)
 		if urlQuery.Get(c) != "" {
 			for _, v := range strings.Split(urlQuery.Get(c), ",") {
-				metaLike = append(metaLike, fmt.Sprintf("%s LIKE $%d ESCAPE '^'", fields.Columns[i], param))
+				metaLike = append(metaLike, fmt.Sprintf("%s LIKE $%d ESCAPE '^'", fieldIterator.ColumnName[i], param))
 				whereVal = append(whereVal, "%"+queryReplacer.Replace(v)+"%")
 				param++
 			}
-			if !slices.Contains(outputQueries, fields.Queries[i]) {
-				outputQueries = append(outputQueries, fields.Queries[i])
+			if !slices.Contains(outputQueries, fieldIterator.Query[i]) {
+				outputQueries = append(outputQueries, fieldIterator.Query[i])
 			}
 		}
 		if len(metaLike) > 0 {
@@ -211,13 +223,13 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 
 		if urlQuery.Has("fields") {
 			for _, c := range strings.Split(urlQuery.Get("fields"), ",") {
-				if i := slices.Index(fields.Names, c); i != -1 {
+				if i := slices.Index(fieldIterator.Name, c); i != -1 {
 					outputIndices = append(outputIndices, i)
 				}
 			}
 		}
 		if len(outputIndices) == 0 {
-			for i := range fields.Names {
+			for i := range fieldIterator.Name {
 				outputIndices = append(outputIndices, i)
 			}
 		}
@@ -231,16 +243,16 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, i := range outputIndices {
-			outputColumns = append(outputColumns, fields.Columns[i])
-			if !slices.Contains(outputQueries, fields.Queries[i]) {
-				outputQueries = append(outputQueries, fields.Queries[i])
+			outputColumns = append(outputColumns, fieldIterator.ColumnName[i])
+			if !slices.Contains(outputQueries, fieldIterator.Query[i]) {
+				outputQueries = append(outputQueries, fieldIterator.Query[i])
 			}
 		}
 
 		var dbQuery string
 		var mergeText string
-		for i, q := range fields.Queries {
-			if fields.NeedsMerge[i] && slices.Contains(outputQueries, q) {
+		for i, q := range fieldIterator.Query {
+			if fieldIterator.DataTable[i] && slices.Contains(outputQueries, q) {
 				mergeText = " LEFT JOIN game_data ON game.id=game_data.gameId"
 				break
 			}
@@ -287,7 +299,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 			filtered := false
 			if strings.ToLower(urlQuery.Get("filter")) == "true" {
 				for _, v := range tags {
-					if slices.Contains(config.Filter, v) {
+					if slices.Contains(config.FilteredTags, v) {
 						filtered = true
 						break
 					}
@@ -322,11 +334,11 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 			for i, v := range entry {
 				fieldIndex := outputIndices[i]
 				if jsonValue, err := json.Marshal(v); err == nil {
-					jsonObject += `"` + fields.Names[fieldIndex] + `":`
-					switch fields.Types[fieldIndex] {
-					case 1:
+					jsonObject += `"` + fieldIterator.Name[fieldIndex] + `":`
+					switch fieldIterator.Type[fieldIndex] {
+					case "array":
 						jsonObject += "[" + strings.ReplaceAll(string(jsonValue), "; ", `","`) + "]"
-					case 2:
+					case "bool":
 						jsonObject += strings.Trim(string(jsonValue), `"`)
 					default:
 						jsonObject += string(jsonValue)
